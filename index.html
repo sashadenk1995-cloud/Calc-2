@@ -60,12 +60,21 @@ input:focus-visible,button:focus-visible{outline:3px solid var(--acc);outline-of
 .sum button{all:unset;cursor:pointer;color:var(--acc);font-weight:600;font-size:.92rem;padding:2px 4px;border-radius:6px}
 .sum button:focus-visible{outline:3px solid var(--acc)}
 h2{font-size:1.15rem;margin:24px 0 10px}
+.lnk{background:var(--soft);color:var(--ink);border:0;border-radius:20px;padding:8px 14px;font:inherit;font-size:.92rem;cursor:pointer}
+.savebtn{width:100%;margin-top:6px;padding:13px;font:inherit;font-weight:600;border:0;border-radius:12px;background:var(--acc);color:var(--accink);cursor:pointer}
+.hit{margin-bottom:12px}
+.hit h3{margin:0;font-size:1.05rem;overflow-wrap:anywhere}
+.hit .d{color:var(--mut);font-size:.85rem;margin-bottom:6px}
+.hit .l{font-size:.95rem;margin:2px 0}
+.hit .hb{font:600 1.4rem "Courier New",monospace;color:var(--acc);margin:4px 0 6px}
+.hit .b{display:flex;gap:8px;margin-top:12px}
+.hit .b button{flex:1}
 [hidden]{display:none!important}
 </style>
 </head>
 <body>
 <div class="app">
-<div class="top"><b id="stepname">Шаг 1 из 5</b></div>
+<div class="top"><b id="stepname">Шаг 1 из 5</b><button id="hist" type="button" class="lnk">Журнал (0)</button></div>
 <div class="dots" id="dots"></div>
 
 <section id="s0">
@@ -137,7 +146,8 @@ h2{font-size:1.15rem;margin:24px 0 10px}
 <h1>Результат</h1>
 <p class="lead">t = 3 600 000 · Ктр · cos φ / (ΣI · Uср · A)</p>
 <div class="scr" aria-live="polite"><small>Время индикации tимп</small><output id="r">—</output><div class="sub" id="rs"></div></div>
-<div class="card"><ul class="sum" id="sumlist"></ul></div>
+<div class="card"><label><span>Название (объект, счётчик), по желанию</span><input type="text" id="sname" placeholder="например, щит 3, ПУ №1234"></label><button type="button" id="save" class="savebtn">Сохранить копию в журнал</button><p class="note" id="savemsg"></p></div>
+<div class="card" style="margin-top:12px"><ul class="sum" id="sumlist"></ul></div>
 <h2>Векторная диаграмма</h2>
 <div class="card"><svg id="vd" viewBox="-135 -135 270 270" role="img" aria-label="Векторная диаграмма напряжений и токов" style="width:100%;height:auto;max-height:340px;display:block"></svg><p class="note" id="vdn"></p></div>
 <div id="pw5" hidden><h2>Мощность на ПУ по tимп</h2>
@@ -146,12 +156,19 @@ h2{font-size:1.15rem;margin:24px 0 10px}
 <p class="note">P = 3 600 000 · Ктр · cos φ / (tимп · A)</p></div>
 </section>
 
+<section id="sh">
+<h1>Журнал</h1>
+<p class="lead">Сохранённые результаты хранятся на этом устройстве.</p>
+<div id="hlist"></div>
+<button type="button" id="hclear" class="lnk" hidden>Очистить журнал</button>
+</section>
+
 <div class="foot"><button id="back" type="button">Назад</button><button id="next" type="button">Далее</button></div>
 </div>
 <script>
 (function(){
 var $=function(x){return document.getElementById(x)};
-var AM0="Меркурий: нажмите значение или введите своё. Сверьте с щитком счётчика.",N=5,step=0,reach=0,names=["Постоянная","Напряжение","Токи","Ктр и cos φ","Результат"];
+var AM0="Меркурий: нажмите значение или введите своё. Сверьте с щитком счётчика.",N=5,step=0,inHist=false,curId=null,reach=0,names=["Постоянная","Напряжение","Токи","Ктр и cos φ","Результат"];
 function num(v){v=String(v).replace(",",".").trim();return v===""?NaN:Number(v)}
 function fmt(x,d){return x.toLocaleString("ru-RU",{maximumFractionDigits:d==null?3:d})}
 var all=["a","u","u1","u2","u3i","i1","i2","i3","k","c","c1","c2","c3i","t","t0"];
@@ -205,6 +222,7 @@ function live(){
  if(ae===$("t0"))$("t").value=$("t0").value;else if(ae===$("t"))$("t0").value=$("t").value;
  quick();
  if(step===4)result();
+ saveDraft();
 }
 function quick(){
  var t=num($("t0").value),a=getA(),k=getK(),c=getC();
@@ -275,6 +293,7 @@ function result(){
   var b=document.createElement("button");b.type="button";b.textContent=x[1]+" · изменить";
   b.addEventListener("click",function(){go(x[2])});li.children[1].replaceWith(b);$("sumlist").appendChild(li)});
  drawVec();
+ autoSave();
 }
 function validate(n){
  var m="";
@@ -286,30 +305,115 @@ function validate(n){
  return m==="";
 }
 function render(){
- for(var i=0;i<N;i++)$("s"+i).classList.toggle("show",i===step);
- $("stepname").textContent="Шаг "+(step+1)+" из "+N+": "+names[step];
+ for(var i=0;i<N;i++)$("s"+i).classList.toggle("show",i===step&&!inHist);
+ $("sh").classList.toggle("show",inHist);
+ $("stepname").textContent=inHist?"Журнал":("Шаг "+(step+1)+" из "+N+": "+names[step]);
  var d=$("dots");d.innerHTML="";
  for(var j=0;j<N;j++){var b=document.createElement("button");b.type="button";b.className=j<=step?"on":"";
   b.setAttribute("aria-label","Шаг "+(j+1)+": "+names[j]);b.disabled=j>reach;
   (function(j){b.addEventListener("click",function(){go(j)})})(j);d.appendChild(b)}
- $("back").hidden=step===0;
- $("next").textContent=step===N-1?"Начать заново":(step===N-2?"Рассчитать":"Далее");
+ $("back").hidden=step===0||inHist;
+ $("next").textContent=inHist?"К расчёту":(step===N-1?"Начать заново":(step===N-2?"Рассчитать":"Далее"));
  if(step===4)result();
  window.scrollTo(0,0);
  var f=document.querySelector("#s"+step+" input[type=text]:not([hidden])");
 }
-function go(n){step=n;if(n>reach)reach=n;render()}
+function go(n){inHist=false;$("savemsg").textContent="";step=n;if(n>reach)reach=n;render();saveDraft()}
 $("next").addEventListener("click",function(){
+ if(inHist){inHist=false;render();return}
  if(step===N-1){all.forEach(function(x){$(x).value=(x==="c"||x==="c1"||x==="c2"||x==="c3i")?"1":""});
-  $("um").checked=false;$("cm").checked=false;$("pm").checked=false;$("cang").checked=false;reach=0;live();go(0);return}
+  $("um").checked=false;$("cm").checked=false;$("pm").checked=false;$("cang").checked=false;$("sname").value="";curId=null;reach=0;live();go(0);return}
  if(validate(step))go(step+1);
 });
 $("back").addEventListener("click",function(){if(step>0)go(step-1)});
-document.addEventListener("keydown",function(e){if(e.key==="Enter"&&e.target.tagName==="INPUT"&&e.target.type==="text"){e.preventDefault();$("next").click()}});
+document.addEventListener("keydown",function(e){if(e.key==="Enter"&&e.target.tagName==="INPUT"&&e.target.type==="text"){e.preventDefault();if(e.target.id==="sname")$("save").click();else $("next").click()}});
 $("cang").addEventListener("change",convAng);
 all.concat(["um","cm","pm","cang"]).forEach(function(x){$(x).addEventListener("input",live);$(x).addEventListener("change",live)});
 [[500,"Меркурий 230 ART-02"],[1000,"Меркурий 230 ART-01, ART-03"],[1600,"Меркурий 230 AM-01, AM-02"],[3200,"Меркурий 201.7, 201.9"],[5000,"Меркурий 230 ART-00, 201.8"],[8000,"Меркурий 230 AM-00"]].forEach(function(m){var b=document.createElement("button");b.type="button";b.textContent=fmt(m[0],0);
  b.addEventListener("click",function(){$("a").value=m[0];$("e0").textContent="";live();$("amodel").textContent=m[1]+". Сверьте с щитком счётчика."});$("achips").appendChild(b)});
+var KEY="meter-calc-history-v1";
+function loadH(){try{var v=JSON.parse(localStorage.getItem(KEY)||"[]");return Array.isArray(v)?v:[]}catch(e){return []}}
+function saveH(a){try{localStorage.setItem(KEY,JSON.stringify(a));return true}catch(e){return false}}
+function mk(tag,cls,text,p){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;if(p)p.appendChild(e);return e}
+function renderHist(){
+ var a=loadH(),box=$("hlist");box.innerHTML="";
+ $("hist").textContent="Журнал ("+a.length+")";
+ $("hclear").hidden=!a.length;
+ if(!a.length){mk("p","note","Пока ничего не сохранено. Сохраните результат на последнем шаге расчёта.",box);return}
+ a.slice().reverse().forEach(function(e){
+  var r=e.res||{},c=mk("div","card hit",null,box);
+  mk("h3","",e.name||"Без названия",c);
+  mk("div","d",new Date(e.ts).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}),c);
+  mk("div","hb","tимп = "+fmt(r.t)+" с",c);
+  mk("div","l","A = "+fmt(r.a)+" имп/кВт·ч, Uср = "+fmt(r.u)+" В",c);
+  mk("div","l","ΣI = "+fmt(r.I)+" А, Ктр = "+fmt(r.k)+", cos φ = "+fmt(r.c,4),c);
+  if(r.P!=null)mk("div","l","При tимп = "+fmt(r.tin)+" с мощность на ПУ "+fmt(r.P)+" Вт",c);
+  var b=mk("div","b",null,c);
+  var o=mk("button","lnk","Открыть",b);o.type="button";o.addEventListener("click",function(){restore(e)});
+  var d=mk("button","lnk","Удалить",b);d.type="button";d.addEventListener("click",function(){saveH(loadH().filter(function(x){return x.id!==e.id}));renderHist()});
+ });
+}
+function restore(e){
+ all.forEach(function(x){if(e.vals&&x in e.vals)$(x).value=e.vals[x]});
+ ["um","cm","pm","cang"].forEach(function(x){$(x).checked=!!(e.chk&&e.chk[x])});
+ $("sname").value=e.name||"";
+ curId=e.id;reach=4;live();go(4);
+}
+$("save").addEventListener("click",function(){
+ var a=getA(),u=getU(),I=getI(),k=getK(),c=getC(),m=$("savemsg");
+ if([a,u,I,k,c].some(isNaN)){m.textContent="Сначала заполните все данные расчёта.";return}
+ var t=3600000*k*c/(I*u*a),tin=num($("t").value),P=null;
+ if($("pm").checked&&tin>0)P=3600000*k*c/(tin*a);
+ var vals={};all.forEach(function(x){vals[x]=$(x).value});
+ var e={id:Date.now(),ts:Date.now(),name:$("sname").value.trim(),vals:vals,chk:{um:$("um").checked,cm:$("cm").checked,pm:$("pm").checked,cang:$("cang").checked},res:{a:a,u:u,I:I,k:k,c:c,t:t,tin:P===null?null:tin,P:P}};
+ var h=loadH();h.push(e);if(h.length>200)h=h.slice(-200);
+ m.textContent=saveH(h)?"Сохранено в журнал.":"Не удалось сохранить: память устройства недоступна.";
+ renderHist();
+});
+$("hist").addEventListener("click",function(){inHist=true;renderHist();render()});
+$("hclear").addEventListener("click",function(){
+ var b=$("hclear");
+ if(b.dataset.arm==="1"){saveH([]);b.dataset.arm="0";b.textContent="Очистить журнал";renderHist();return}
+ b.dataset.arm="1";b.textContent="Нажмите ещё раз для очистки";
+ setTimeout(function(){b.dataset.arm="0";b.textContent="Очистить журнал"},4000);
+});
+var DKEY="meter-calc-draft-v1";
+function chkState(){return {um:$("um").checked,cm:$("cm").checked,pm:$("pm").checked,cang:$("cang").checked}}
+function saveDraft(){
+ try{var v={};all.forEach(function(x){v[x]=$(x).value});
+  localStorage.setItem(DKEY,JSON.stringify({v:v,c:chkState(),n:$("sname").value,step:step,reach:reach,cur:curId}))}catch(e){}
+}
+function loadDraft(){
+ try{var d=JSON.parse(localStorage.getItem(DKEY)||"null");if(!d||!d.v)return;
+  all.forEach(function(x){if(x in d.v)$(x).value=d.v[x]});
+  ["um","cm","pm","cang"].forEach(function(x){$(x).checked=!!(d.c&&d.c[x])});
+  $("sname").value=d.n||"";
+  step=Math.min(Math.max(d.step|0,0),N-1);reach=Math.min(Math.max(d.reach|0,step),N-1);curId=d.cur||null;
+ }catch(e){}
+}
+function buildEntry(id){
+ var a=getA(),u=getU(),I=getI(),k=getK(),c=getC();
+ if([a,u,I,k,c].some(isNaN))return null;
+ var t=3600000*k*c/(I*u*a),tin=num($("t").value),P=null;
+ if($("pm").checked&&tin>0)P=3600000*k*c/(tin*a);
+ var vals={};all.forEach(function(x){vals[x]=$(x).value});
+ return {id:id,ts:Date.now(),name:$("sname").value.trim(),vals:vals,chk:chkState(),res:{a:a,u:u,I:I,k:k,c:c,t:t,tin:P===null?null:tin,P:P}};
+}
+function autoSave(){
+ var id=curId||Date.now(),e=buildEntry(id);
+ if(!e){$("savemsg").textContent="";return}
+ curId=id;
+ var h=loadH(),i=-1;
+ for(var j=0;j<h.length;j++)if(h[j].id===id){i=j;break}
+ if(i>=0){e.ts=h[i].ts;h[i]=e}else h.push(e);
+ if(h.length>200)h=h.slice(-200);
+ var ok=saveH(h);
+ $("savemsg").textContent=ok?"Автосохранено в журнал, "+new Date().toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"}):"Не удалось сохранить: память устройства недоступна.";
+ if(ok)renderHist();
+}
+$("sname").addEventListener("input",function(){if(step===4&&!inHist)autoSave();saveDraft()});
+renderHist();
+loadDraft();
 live();render();
 })();
 </script>
